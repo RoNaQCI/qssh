@@ -38,6 +38,6 @@ int get_key_from_qkd(QKD_Credential *cred, QKD_Key *key);
  * @param[out] key     Pointer to a QKD_Key structure to store the retrieved key.
  * @return 0 on success, non-zero on failure.
  */
-int get_key_by_id(const uint8_t key_id[KEY_ID_LENGTH], QKD_Key *key);
+int get_key_by_id(QKD_Credential *cred, const uint8_t key_id[KEY_ID_LENGTH], QKD_Key *key);
 
 #endif /* QKD_H */

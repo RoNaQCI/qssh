@@ -12,11 +12,11 @@
 
 /* Define constants and types */
 #define QKD_GSS_MECH_OID_LENGTH 9
-static const gss_OID_desc QKD_GSS_MECH_OID_DESC = {
+static gss_OID_desc QKD_GSS_MECH_OID_DESC = {
     QKD_GSS_MECH_OID_LENGTH,
     (void *) "\x2b\x06\x01\x04\x01\x82\x37\x14\x02" // Example OID: 1.3.6.1.4.1.12345.2
 };
-static const gss_OID QKD_GSS_MECH_OID = &QKD_GSS_MECH_OID_DESC;
+static gss_OID QKD_GSS_MECH_OID = &QKD_GSS_MECH_OID_DESC;
 
 #define KEY_LENGTH 32          // 256 bits
 #define KEY_SEGMENT_LENGTH 16  // 128 bits
@@ -216,6 +216,10 @@ OM_uint32 gss_init_sec_context(
         return GSS_S_CALL_INACCESSIBLE_WRITE;
     }
 
+    if (mech_type != NULL) {
+        *mech_type = *QKD_GSS_MECH_OID; // Assign the OID
+    }
+
     if (input_token == GSS_C_NO_BUFFER || input_token->length == 0) {
         /* Initial call to establish context */
 
@@ -338,6 +342,10 @@ OM_uint32 gss_accept_sec_context(
         return GSS_S_CALL_INACCESSIBLE_WRITE;
     }
 
+    if (mech_type != NULL) {
+        *mech_type = QKD_GSS_MECH_OID; // Assign the OID
+    }
+
     /* Step 1: Deserialize the Input Token */
     if (input_token->length != sizeof(QKD_InitToken)) {
         return GSS_S_DEFECTIVE_TOKEN;
@@ -345,10 +353,29 @@ OM_uint32 gss_accept_sec_context(
     QKD_InitToken init_token;
     memcpy(&init_token, input_token->value, input_token->length);
 
+    QKD_Credential *cred = (QKD_Credential *)acceptor_cred_handle;
+
     /* Step 2: Retrieve Keys from QKD Device Using Key IDs */
-    QKD_Key key1 = get_key_by_id(init_token.key_id1);
-    QKD_Key key2 = get_key_by_id(init_token.key_id2);
-    QKD_Key key3 = get_key_by_id(init_token.key_id3);
+    QKD_Key key1;
+    if (get_key_by_id(cred, init_token.key_id1, &key1) != 0) {
+        // Handle error
+        fprintf(stderr, "Failed to retrieve key by ID from QKD device\n");
+        return GSS_S_FAILURE;
+    }
+
+    QKD_Key key2;
+    if (get_key_by_id(cred, init_token.key_id2, &key2) != 0) {
+        // Handle error
+        fprintf(stderr, "Failed to retrieve key by ID from QKD device\n");
+        return GSS_S_FAILURE;
+    }
+
+    QKD_Key key3;
+    if (get_key_by_id(cred, init_token.key_id3, &key3) != 0) {
+        // Handle error
+        fprintf(stderr, "Failed to retrieve key by ID from QKD device\n");
+        return GSS_S_FAILURE;
+    }
 
     /* Step 3: Compute EM1 and Decrypt to Get Key1[1-128] */
     uint8_t received_key1_segment[KEY_SEGMENT_LENGTH];
@@ -432,6 +459,10 @@ OM_uint32 gss_display_status(
 ) {
     if (minor_status == NULL || status_string == NULL || message_context == NULL) {
         return GSS_S_CALL_INACCESSIBLE_WRITE;
+    }
+
+    if (mech_type != NULL) {
+        *mech_type = *QKD_GSS_MECH_OID; // Assign the OID
     }
 
     *minor_status = 0;

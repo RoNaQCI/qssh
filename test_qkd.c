@@ -1,11 +1,23 @@
 /* test_qkd.c */
 
 #include "qkd.h"
+#include <string.h>
+#include <stdlib.h>
 #include <stdio.h>
 
 int main() {
+    // Allocate and initialize the credential structure
+    QKD_Credential *cred = (QKD_Credential *)malloc(sizeof(QKD_Credential));
+    if (cred == NULL) {
+        return -1;
+    }
+
+    // Initialize fields to NULL
+    memset(cred, 0, sizeof(QKD_Credential));
+    cred->principal_name = (char*)"BC_P";
+
     QKD_Key key;
-    int result = get_key_from_qkd(&key);
+    int result = get_key_from_qkd(cred, &key);
 
     if (result == 0) {
         // Print key_id and key in hex for testing purposes
@@ -22,10 +34,8 @@ int main() {
         fprintf(stderr, "Failed to retrieve key from QKD device\n");
     }
 
-    // If get_key_by_id() is implemented and supported
-    /*
     QKD_Key key_by_id;
-    result = get_key_by_id(key.key_id, &key_by_id);
+    result = get_key_by_id(cred, key.key_id, &key_by_id);
 
     if (result == 0) {
         // Print key data
@@ -37,7 +47,6 @@ int main() {
     } else {
         fprintf(stderr, "Failed to retrieve key by ID from QKD device\n");
     }
-    */
 
     return 0;
 }
