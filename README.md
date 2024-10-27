@@ -56,7 +56,7 @@ For **Debian/Ubuntu**:
 
 ```bash
 sudo apt-get update
-sudo apt-get install build-essential libkrb5-dev libcurl4-openssl-dev
+sudo apt-get install libcurl4-openssl-dev libjson-c-dev libssl-dev uuid-dev
 ```
 
 For **CentOS/RHEL**:

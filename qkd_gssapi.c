@@ -2,7 +2,9 @@
 
 /* Include necessary headers */
 #include <gssapi/gssapi.h>
+#include "qkd.h" 
 #include <curl/curl.h>
+#include <errno.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
@@ -20,22 +22,11 @@ static const gss_OID QKD_GSS_MECH_OID = &QKD_GSS_MECH_OID_DESC;
 #define KEY_SEGMENT_LENGTH 16  // 128 bits
 #define KEY_ID_LENGTH 16       // Assume 128-bit key IDs
 
-/* Define data structures */
-typedef struct {
-    uint8_t key_id[KEY_ID_LENGTH];
-    uint8_t key[KEY_LENGTH];
-} QKD_Key;
-
 typedef struct {
     QKD_Key key1;
     QKD_Key key2;
     QKD_Key key3;
 } QKD_Context;
-
-/* Credential structure */
-typedef struct {
-    char *principal_name; // Placeholder for any credential-specific data
-} QKD_Credential;
 
 /* Token structures */
 typedef struct {
@@ -116,34 +107,6 @@ OM_uint32 gss_release_buffer(
     gss_buffer_t buffer
 );
 
-/* Implementations */
-
-/* Helper function to interact with QKD device's HTTP API to retrieve a key */
-QKD_Key get_key_from_qkd() {
-    QKD_Key key;
-    // Implement HTTP GET request to the QKD device's API to retrieve a key
-    // For illustration purposes, we'll use placeholder data
-
-    // Placeholder key_id and key (in a real implementation, retrieve from QKD device)
-    memset(key.key_id, 0x01, KEY_ID_LENGTH);
-    memset(key.key, 0xAA, KEY_LENGTH);
-
-    return key;
-}
-
-/* Helper function to retrieve a key by key_id */
-QKD_Key get_key_by_id(uint8_t key_id[KEY_ID_LENGTH]) {
-    QKD_Key key;
-    // Implement HTTP GET request to retrieve the key by key_id from the QKD device
-    // For illustration purposes, we'll use placeholder data
-
-    // Use the provided key_id (in a real implementation, use it in the HTTP request)
-    memcpy(key.key_id, key_id, KEY_ID_LENGTH);
-    memset(key.key, 0xAA, KEY_LENGTH); // Use the same placeholder key data
-
-    return key;
-}
-
 /* GSSAPI function implementations */
 
 OM_uint32 gss_acquire_cred(
@@ -169,8 +132,20 @@ OM_uint32 gss_acquire_cred(
         return GSS_S_FAILURE;
     }
 
-    // For simplicity, we won't store any specific data in the credential
-    cred->principal_name = NULL;
+    // Initialize fields to NULL
+    memset(cred, 0, sizeof(QKD_Credential));
+
+    // This determines on which URL the QKD Get Key request will be made.
+    const char *env_client_name = "QKD_CLIENT_NAME";
+    char *env_client_value = getenv(env_client_name);
+
+    if (env_client_value != NULL) {
+        cred->principal_name = strdup(env_client_value);
+    } else {
+        fprintf(stderr, "Environment variable %s is not set.\n", env_client_name);
+        free(cred);
+        return GSS_S_FAILURE;
+    }
 
     *output_cred_handle = (gss_cred_id_t)cred;
 
@@ -245,9 +220,25 @@ OM_uint32 gss_init_sec_context(
         /* Initial call to establish context */
 
         /* Step 1: Retrieve Keys and Key IDs from QKD Device */
-        QKD_Key key1 = get_key_from_qkd();
-        QKD_Key key2 = get_key_from_qkd();
-        QKD_Key key3 = get_key_from_qkd();
+        QKD_Key key1;
+        QKD_Key key2;
+        QKD_Key key3;
+
+        QKD_Credential *cred = (QKD_Credential *)claimant_cred_handle;
+        if (get_key_from_qkd(cred, &key1) != 0) {
+            // Handle error
+            return GSS_S_FAILURE;
+        }
+
+        if (get_key_from_qkd(cred, &key2) != 0) {
+            // Handle error
+            return GSS_S_FAILURE;
+        }
+
+        if (get_key_from_qkd(cred, &key3) != 0) {
+            // Handle error
+            return GSS_S_FAILURE;
+        }
 
         /* Step 2: Compute EM1 = Key1[1-128] ⊕ Key2[1-128] */
         uint8_t EM1[KEY_SEGMENT_LENGTH];
