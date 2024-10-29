@@ -14,10 +14,10 @@ int main() {
 
     // Initialize fields to NULL
     memset(cred, 0, sizeof(QKD_Credential));
-    cred->principal_name = (char*)"BC_P";
+    cred->principal_name = (char*)"testme";
 
     QKD_Key key;
-    int result = get_key_from_qkd(cred, &key);
+    int result = qkd_get_key(cred, &key);
 
     if (result == 0) {
         // Print key_id and key in hex for testing purposes
@@ -35,7 +35,7 @@ int main() {
     }
 
     QKD_Key key_by_id;
-    result = get_key_by_id(cred, key.key_id, &key_by_id);
+    result = qkd_get_key_by_id(cred, key.key_id, &key_by_id);
 
     if (result == 0) {
         // Print key data

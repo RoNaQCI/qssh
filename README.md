@@ -46,8 +46,8 @@ The session key forming mechanism involves a protocol where three 256-bit keys a
 ### 1. Clone the Repository
 
 ```bash
-git clone https://your-repo-url/qkd_gssapi.git
-cd qkd_gssapi
+git clone git@github.com:QuantumUPB/qssh.git
+cd qssh
 ```
 
 ### 2. Install Dependencies
@@ -56,7 +56,7 @@ For **Debian/Ubuntu**:
 
 ```bash
 sudo apt-get update
-sudo apt-get install libcurl4-openssl-dev libjson-c-dev libssl-dev uuid-dev
+sudo apt-get install libcurl4-openssl-dev libjson-c-dev libssl-dev uuid-dev libkrb5-dev
 ```
 
 For **CentOS/RHEL**:

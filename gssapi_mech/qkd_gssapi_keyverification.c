@@ -4,6 +4,8 @@
 #include <gssapi/gssapi.h>
 #include "qkd.h" 
 #include <curl/curl.h>
+#include <openssl/kdf.h>
+#include <openssl/params.h>
 #include <errno.h>
 #include <stdint.h>
 #include <string.h>
@@ -26,6 +28,7 @@ typedef struct {
     QKD_Key key1;
     QKD_Key key2;
     QKD_Key key3;
+    uint8_t formed_session_key[KEY_LENGTH];
 } QKD_Context;
 
 /* Token structures */
@@ -229,17 +232,17 @@ OM_uint32 gss_init_sec_context(
         QKD_Key key3;
 
         QKD_Credential *cred = (QKD_Credential *)claimant_cred_handle;
-        if (get_key_from_qkd(cred, &key1) != 0) {
+        if (qkd_get_key(cred, &key1) != 0) {
             // Handle error
             return GSS_S_FAILURE;
         }
 
-        if (get_key_from_qkd(cred, &key2) != 0) {
+        if (qkd_get_key(cred, &key2) != 0) {
             // Handle error
             return GSS_S_FAILURE;
         }
 
-        if (get_key_from_qkd(cred, &key3) != 0) {
+        if (qkd_get_key(cred, &key3) != 0) {
             // Handle error
             return GSS_S_FAILURE;
         }
@@ -308,9 +311,14 @@ OM_uint32 gss_init_sec_context(
         // Key3[129-256]
         memcpy(session_key + KEY_SEGMENT_LENGTH, &ctx->key3.key[KEY_SEGMENT_LENGTH], KEY_SEGMENT_LENGTH);
 
-        /* Store the session key in the context for later use */
-        // For demonstration, we'll store it in the context (you might integrate it with GSSAPI structures)
-        // You may need to integrate this session key with OpenSSH's key exchange mechanism
+        /* Step 7: Store Keys in Security Context */
+        if (ctx == NULL) {
+            *minor_status = ENOMEM;
+            return GSS_S_FAILURE;
+        }
+        memcpy(&ctx->formed_session_key, session_key, KEY_LENGTH);
+
+        *context_handle = (gss_ctx_id_t)ctx;
 
         /* Clean up */
         // Zeroize and free temporary data if necessary
@@ -357,21 +365,21 @@ OM_uint32 gss_accept_sec_context(
 
     /* Step 2: Retrieve Keys from QKD Device Using Key IDs */
     QKD_Key key1;
-    if (get_key_by_id(cred, init_token.key_id1, &key1) != 0) {
+    if (qkd_get_key_by_id(cred, init_token.key_id1, &key1) != 0) {
         // Handle error
         fprintf(stderr, "Failed to retrieve key by ID from QKD device\n");
         return GSS_S_FAILURE;
     }
 
     QKD_Key key2;
-    if (get_key_by_id(cred, init_token.key_id2, &key2) != 0) {
+    if (qkd_get_key_by_id(cred, init_token.key_id2, &key2) != 0) {
         // Handle error
         fprintf(stderr, "Failed to retrieve key by ID from QKD device\n");
         return GSS_S_FAILURE;
     }
 
     QKD_Key key3;
-    if (get_key_by_id(cred, init_token.key_id3, &key3) != 0) {
+    if (qkd_get_key_by_id(cred, init_token.key_id3, &key3) != 0) {
         // Handle error
         fprintf(stderr, "Failed to retrieve key by ID from QKD device\n");
         return GSS_S_FAILURE;
@@ -416,6 +424,16 @@ OM_uint32 gss_accept_sec_context(
     memcpy(&ctx->key1, &key1, sizeof(QKD_Key));
     memcpy(&ctx->key2, &key2, sizeof(QKD_Key));
     memcpy(&ctx->key3, &key3, sizeof(QKD_Key));
+
+    /* Step 4: Form the Session Key */
+    uint8_t session_key[KEY_SEGMENT_LENGTH * 2]; // 256 bits
+    // Key1[129-256]
+    memcpy(session_key, &ctx->key1.key[KEY_SEGMENT_LENGTH], KEY_SEGMENT_LENGTH);
+    // Key3[129-256]
+    memcpy(session_key + KEY_SEGMENT_LENGTH, &ctx->key3.key[KEY_SEGMENT_LENGTH], KEY_SEGMENT_LENGTH);
+
+    /* Step 7: Store Keys in Security Context */
+    memcpy(&ctx->formed_session_key, session_key, KEY_LENGTH);
 
     *context_handle = (gss_ctx_id_t)ctx;
 
@@ -553,3 +571,80 @@ OM_uint32 gss_release_buffer(
     return GSS_S_COMPLETE;
 }
 
+OM_uint32 gss_pseudo_random(
+    OM_uint32 *minor_status,
+    gss_ctx_id_t context_handle,
+    int prf_key,
+    const gss_buffer_t prf_in,
+    ssize_t desired_output_len,
+    gss_buffer_t prf_out
+) {
+    if (minor_status == NULL || context_handle == GSS_C_NO_CONTEXT || prf_out == NULL) {
+        return GSS_S_CALL_INACCESSIBLE_WRITE;
+    }
+
+    *minor_status = 0;
+
+    // Retrieve the session key from the context
+    QKD_Context *context = (QKD_Context *)context_handle;
+    uint8_t *session_key = context->formed_session_key; // Assume 32 bytes (256 bits)
+    
+    EVP_KDF *kdf = NULL;
+    EVP_KDF_CTX *kdf_ctx = NULL;
+    OSSL_PARAM params[5], *p = params;
+    unsigned char *output = NULL;
+
+    kdf = EVP_KDF_fetch(NULL, "HKDF", NULL);
+    if (kdf == NULL) {
+        *minor_status = GSS_S_FAILURE;
+        return GSS_S_FAILURE;
+    }
+
+    kdf_ctx = EVP_KDF_CTX_new(kdf);
+    EVP_KDF_free(kdf);
+    if (kdf_ctx == NULL) {
+        *minor_status = GSS_S_FAILURE;
+        return GSS_S_FAILURE;
+    }
+
+    // Set up the parameters for HKDF with SHA256
+    *p++ = OSSL_PARAM_construct_utf8_string("digest", "SHA256", 0);
+    *p++ = OSSL_PARAM_construct_octet_string("salt", NULL, 0); // Optional salt (can be NULL)
+    *p++ = OSSL_PARAM_construct_octet_string("key", session_key, KEY_LENGTH);
+    if (prf_in != GSS_C_NO_BUFFER && prf_in->length > 0) {
+        *p++ = OSSL_PARAM_construct_octet_string("info", prf_in->value, prf_in->length);
+    } else {
+        *p++ = OSSL_PARAM_construct_octet_string("info", NULL, 0);
+    }
+    *p = OSSL_PARAM_construct_end();
+
+    if (EVP_KDF_CTX_set_params(kdf_ctx, params) <= 0) {
+        EVP_KDF_CTX_free(kdf_ctx);
+        *minor_status = GSS_S_FAILURE;
+        return GSS_S_FAILURE;
+    }
+
+    // Allocate output buffer
+    output = (uint8_t *)malloc(desired_output_len);
+    if (output == NULL) {
+        EVP_KDF_CTX_free(kdf_ctx);
+        *minor_status = ENOMEM;
+        return GSS_S_FAILURE;
+    }
+
+    // Derive the keying material
+    if (EVP_KDF_derive(kdf_ctx, output, desired_output_len, p) <= 0) {
+        EVP_KDF_CTX_free(kdf_ctx);
+        free(output);
+        *minor_status = GSS_S_FAILURE;
+        return GSS_S_FAILURE;
+    }
+
+    EVP_KDF_CTX_free(kdf_ctx);
+
+    // Set the output buffer
+    prf_out->length = desired_output_len;
+    prf_out->value = output;
+
+    return GSS_S_COMPLETE;
+}

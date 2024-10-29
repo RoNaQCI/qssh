@@ -1,0 +1,6 @@
+sudo docker build -t qkd_ssh_image .
+sudo docker network create qkd-network
+sudo docker run -d --name ssh_server --network qkd-network --hostname ssh_server qkd_ssh_image
+sudo docker run -d --name ssh_client --network qkd-network --hostname ssh_client qkd_ssh_image
+sudo docker exec -it ssh_server /bin/bash
+sudo docker exec -it ssh_client /bin/bash

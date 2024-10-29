@@ -11,6 +11,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define ENC_SAE_ID "SAE-ID"
+#define DEC_SAE_ID "SAE-ID"
+
+#define STATIC_CREDENTIALS
+#define STATIC_ENC_IPPORT "111.111.111.111:11111"
+#define STATIC_DEC_IPPORT "111.111.111.111:11111"
+
 /* Helper struct for storing response data */
 struct MemoryStruct {
     char *memory;
@@ -22,7 +29,7 @@ static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, voi
     size_t realsize = size * nmemb;
     struct MemoryStruct *mem = (struct MemoryStruct *)userp;
 
-    char *ptr = realloc(mem->memory, mem->size + realsize + 1);
+    char *ptr = (char *)realloc(mem->memory, mem->size + realsize + 1);
     if (ptr == NULL) {
         // Out of memory
         return 0;
@@ -47,7 +54,7 @@ static int Base64Decode(const char* b64message, unsigned char** buffer, size_t* 
     else if (b64message[decodeLen - 1] == '=') // Last char is '='
         padding = 1;
 
-    int expectedLen = (decodeLen * 3) / 4 - padding;
+    size_t expectedLen = (decodeLen * 3) / 4 - padding;
 
     *buffer = (unsigned char*)malloc(expectedLen);
     if (*buffer == NULL) {
@@ -93,11 +100,7 @@ static void UUIDBytesToString(const uint8_t* uuid_bytes, char* uuid_str) {
     uuid_unparse(uuid_bytes, uuid_str);
 }
 
-int get_key_from_qkd(QKD_Credential *cred, QKD_Key *key) {
-    if (key == NULL) {
-        return -1;
-    }
-
+int qkd_get_key(QKD_Credential *cred, QKD_Key *key) {
     if (cred == NULL || key == NULL) {
         return -1;
     }
@@ -113,18 +116,42 @@ int get_key_from_qkd(QKD_Credential *cred, QKD_Key *key) {
     CURLcode res;
     struct MemoryStruct chunk;
 
-    chunk.memory = malloc(1);  // Will be grown as needed by realloc
+    chunk.memory = (char *)malloc(1);  // Will be grown as needed by realloc
     chunk.size = 0;            // No data at this point
 
     curl_global_init(CURL_GLOBAL_DEFAULT);
     curl = curl_easy_init();
     if (curl) {
+#ifdef STATIC_CREDENTIALS
+        const char *qkd_ipport_value = STATIC_ENC_IPPORT;
+#else
+        // Get QKD IP and port from environment variable
+        const char *env_qkd_ipport_name = "QKD_IPPORT";
+        char *qkd_ipport_value = getenv(env_qkd_ipport_name);
+        if (env_qkd_ipport_value == NULL) {
+            fprintf(stderr, "Environment variable %s is not set.\n", env_qkd_ipport_name);
+            curl_easy_cleanup(curl);
+            free(chunk.memory);
+            curl_global_cleanup();
+            return -1;
+        }
+#endif
         // Set the URL
-        char[256] qkd_url;
-        snprintf(qkd_url, sizeof(qkd_url), "https://%s:%s/api/v1/keys/%s/enc_keys", "111.111.111.111", "12345", qkd_user)
+        char qkd_url[256];
+        snprintf(qkd_url, sizeof(qkd_url), "https://%s/api/v1/keys/" ENC_SAE_ID "/enc_keys", qkd_ipport_value);
         curl_easy_setopt(curl, CURLOPT_URL, qkd_url);
 
         // Set SSL options
+#ifdef STATIC_CREDENTIALS
+        const char *ssl_cert = "./qkd.crt";
+        curl_easy_setopt(curl, CURLOPT_SSLCERT, ssl_cert);
+
+        const char *ssl_key = "./qkd.key";
+        curl_easy_setopt(curl, CURLOPT_SSLKEY, ssl_key);
+
+        const char *cacert = "./qkd-ca.crt";
+        curl_easy_setopt(curl, CURLOPT_CAINFO, cacert);
+#else
         const char *env_ssl_cert_name = "QKD_SSL_CERT";
         char *env_ssl_cert_value = getenv(env_ssl_cert_name);
 
@@ -163,6 +190,11 @@ int get_key_from_qkd(QKD_Credential *cred, QKD_Key *key) {
             curl_global_cleanup();
             return -1;
         }
+#endif
+
+        // Ignore certificate validation errors if needed (equivalent to -k flag)
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
 
         // Set up callback function to capture the response
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
@@ -287,7 +319,7 @@ int get_key_from_qkd(QKD_Credential *cred, QKD_Key *key) {
     }
 }
 
-int get_key_by_id(QKD_Credential *cred, const uint8_t key_id[KEY_ID_LENGTH], QKD_Key *key) {
+int qkd_get_key_by_id(QKD_Credential *cred, const uint8_t key_id[KEY_ID_LENGTH], QKD_Key *key) {
     if (cred == NULL || key_id == NULL || key == NULL) {
         return -1;
     }
@@ -303,31 +335,46 @@ int get_key_by_id(QKD_Credential *cred, const uint8_t key_id[KEY_ID_LENGTH], QKD
     CURLcode res;
     struct MemoryStruct chunk;
 
-    chunk.memory = malloc(1);  // Will be grown as needed by realloc
+    chunk.memory = (char *)malloc(1);  // Will be grown as needed by realloc
     chunk.size = 0;            // No data at this point
 
     curl_global_init(CURL_GLOBAL_DEFAULT);
     curl = curl_easy_init();
     if (curl) {
+#ifdef STATIC_CREDENTIALS
+        const char *qkd_ipport_value = STATIC_DEC_IPPORT;
+#else
         // Get QKD IP and port from environment variable
         const char *env_qkd_ipport_name = "QKD_IPPORT";
-        char *env_qkd_ipport_value = getenv(env_qkd_ipport_name);
-        if (env_qkd_ipport_value == NULL) {
+        char *qkd_ipport_value = getenv(env_qkd_ipport_name);
+        if (qkd_ipport_value == NULL) {
             fprintf(stderr, "Environment variable %s is not set.\n", env_qkd_ipport_name);
             curl_easy_cleanup(curl);
             free(chunk.memory);
             curl_global_cleanup();
             return -1;
         }
+#endif
 
         // Build the URL
         char qkd_url[256];
-        snprintf(qkd_url, sizeof(qkd_url), "https://%s/api/v1/keys/%s/dec_keys", env_qkd_ipport_value, qkd_user);
+        snprintf(qkd_url, sizeof(qkd_url), "https://%s/api/v1/keys/" DEC_SAE_ID "/dec_keys", qkd_ipport_value);
         curl_easy_setopt(curl, CURLOPT_URL, qkd_url);
 
-        // Set SSL options from environment variables
+        // Set SSL options
+#ifdef STATIC_CREDENTIALS
+        const char *ssl_cert = "./qkd.crt";
+        curl_easy_setopt(curl, CURLOPT_SSLCERT, ssl_cert);
+
+        const char *ssl_key = "./qkd.key";
+        curl_easy_setopt(curl, CURLOPT_SSLKEY, ssl_key);
+
+        const char *cacert = "./qkd-ca.crt";
+        curl_easy_setopt(curl, CURLOPT_CAINFO, cacert);
+#else
         const char *env_ssl_cert_name = "QKD_SSL_CERT";
         char *env_ssl_cert_value = getenv(env_ssl_cert_name);
+
         if (env_ssl_cert_value != NULL) {
             curl_easy_setopt(curl, CURLOPT_SSLCERT, env_ssl_cert_value);
         } else {
@@ -338,8 +385,9 @@ int get_key_by_id(QKD_Credential *cred, const uint8_t key_id[KEY_ID_LENGTH], QKD
             return -1;
         }
 
-        const char *env_ssl_key_name = "QKD_SSL_KEY";
+        const char *env_ssl_key_name = "QKD_SSL_CERT";
         char *env_ssl_key_value = getenv(env_ssl_key_name);
+
         if (env_ssl_key_value != NULL) {
             curl_easy_setopt(curl, CURLOPT_SSLKEY, env_ssl_key_value);
         } else {
@@ -350,8 +398,9 @@ int get_key_by_id(QKD_Credential *cred, const uint8_t key_id[KEY_ID_LENGTH], QKD
             return -1;
         }
 
-        const char *env_ca_name = "QKD_SSL_CA";
+        const char *env_ca_name = "QKD_SSL_CERT";
         char *env_ca_value = getenv(env_ca_name);
+
         if (env_ca_value != NULL) {
             curl_easy_setopt(curl, CURLOPT_CAINFO, env_ca_value);
         } else {
@@ -361,6 +410,7 @@ int get_key_by_id(QKD_Credential *cred, const uint8_t key_id[KEY_ID_LENGTH], QKD
             curl_global_cleanup();
             return -1;
         }
+#endif
 
         // Ignore certificate validation errors if needed (equivalent to -k flag)
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
