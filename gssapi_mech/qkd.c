@@ -11,12 +11,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define ENC_SAE_ID "SAE-ID"
-#define DEC_SAE_ID "SAE-ID"
+#define ENC_SAE_ID "UPB-BC-UPBR"
+#define DEC_SAE_ID "UPB-BC-UPBP"
 
 #define STATIC_CREDENTIALS
-#define STATIC_ENC_IPPORT "111.111.111.111:11111"
-#define STATIC_DEC_IPPORT "111.111.111.111:11111"
+#define STATIC_ENC_IPPORT "141.85.241.65:12443"
+#define STATIC_DEC_IPPORT "141.85.241.65:11443"
 
 /* Helper struct for storing response data */
 struct MemoryStruct {
@@ -146,7 +146,7 @@ int qkd_get_key(QKD_Credential *cred, QKD_Key *key) {
         const char *ssl_cert = "./qkd.crt";
         curl_easy_setopt(curl, CURLOPT_SSLCERT, ssl_cert);
 
-        const char *ssl_key = "./qkd.key";
+        const char *ssl_key = "./qkd-new.key";
         curl_easy_setopt(curl, CURLOPT_SSLKEY, ssl_key);
 
         const char *cacert = "./qkd-ca.crt";
@@ -366,7 +366,7 @@ int qkd_get_key_by_id(QKD_Credential *cred, const uint8_t key_id[KEY_ID_LENGTH],
         const char *ssl_cert = "./qkd.crt";
         curl_easy_setopt(curl, CURLOPT_SSLCERT, ssl_cert);
 
-        const char *ssl_key = "./qkd.key";
+        const char *ssl_key = "./qkd-new.key";
         curl_easy_setopt(curl, CURLOPT_SSLKEY, ssl_key);
 
         const char *cacert = "./qkd-ca.crt";

@@ -8,7 +8,7 @@ PermitRootLogin yes
 StrictModes no
 
 # Enable GSSAPI authentication
-GSSAPIAuthentication yes
+GSSAPIAuthentication no 
 GSSAPICleanupCredentials yes
 
 # Enable GSSAPI Key Exchange
