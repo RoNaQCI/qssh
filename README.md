@@ -29,8 +29,16 @@ The session key forming mechanism involves a protocol where three 256-bit keys a
 
 - **Quantum-Safe Key Exchange**: Utilizes keys from QKD devices to establish SSH sessions.
 - **Custom GSSAPI Mechanism**: Implements a GSSAPI mechanism without modifying the OpenSSH codebase.
+- **Custom Key Exchange Algorithm**: Implements the `kexqkdetsi014` algorithm for seamless QKD integration during the SSH key exchange phase in the Openssh-Portable codebase.
+- **ETSI-014 Compliance**: Aligns with emerging standards for QKD-based cryptographic applications.
 - **Mutual Authentication**: Verifies that both client and server have synchronized keys.
 - **Secure Session Key Formation**: Derives the session key from verified key material.
+
+## Repository Contents
+
+- **`kexqkdetsi014` Implementation**: Source code for the custom KEX algorithm integrated into the OpenSSH-Portable codebase.
+- Custom GSSAPI-QKD Mechanism to integrate into already-compiled ssh clients/servers.
+- **Documentation**: Detailed protocol explanation and configuration steps for deploying the solution.
 
 ## Prerequisites
 
@@ -71,10 +79,11 @@ sudo yum install krb5-devel libcurl-devel
 Run the following command to compile the code into a shared library:
 
 ```bash
-make
+cd gssapi_mech && make
+cd openssh-portable && make config && make build
 ```
 
-This command uses the provided `Makefile` to compile `qkd_gssapi.c` into `libgss_qkd.so`.
+This command uses the provided `Makefile` to compile `qkd_gssapi.c` into `libgss_qkd.so` and the `openssh-portable` codebase into the ssh client and sshd server.
 
 ## Installation
 
@@ -141,7 +150,11 @@ ssh -vvv user@server.com
 
 The `-vvv` flag enables verbose output for debugging purposes.
 
-## Session Key Forming Mechanism
+Or, in case of the `openssh-portable` client, just use the executable generated after compiling:
+
+```./ssh -vvv user@server.com```
+
+## Session Key Forming Mechanism for the GSSAPI Mechanism
 
 ### Overview
 
